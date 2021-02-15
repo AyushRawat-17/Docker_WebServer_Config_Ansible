@@ -1,0 +1,79 @@
+- hosts: localhost
+  vars_files:
+  - ./varibles.yml
+ 
+  tasks:
+   - name: "Creating a directory for webserver"
+     file:
+        path: "/root/dockerserver"
+        state: directory
+
+   - name: "Copying website file to the host"
+     copy:
+        src: "{{webpage}}"
+        dest: "/root/dockerserver"
+       
+   - name: "Configuring Yum for Docker"
+     yum_repository:
+         name: "docker"
+         description: "docker.repo"
+         gpgcheck: no
+         baseurl: "https://download.docker.com/linux/centos/7/x86_64/stable/" 
+  
+   - name: "Installing Docker"
+     package:
+        name: "docker-ce-18.09.1-3.el7.x86_64"
+        state: present              
+           
+   - name: "Starting Docker Services"
+     service:
+        name: "docker"
+        state: started
+
+   - name: "Pulling Centos SSH Server Image"
+     docker_image:
+             name: rawatayush17/centos_ssh:v2
+             source: pull
+     ignore_errors: yes    
+
+   - name: "Launching Docker Container and Exposing port 8080"
+     docker_container:
+        name: "{{ osname }}"
+        image: "rawatayush17/centos_ssh:v2"
+        state: started
+        ports:
+                - 8080:80
+        interactive : yes
+        tty: yes
+        volumes: "/root/dockerserver:/var/www/html"   
+
+   - name: Retrieving Docker Container IP
+     docker_container_info:
+        name: "{{ osname }}"
+     register: x
+
+   - name: Updating Inventory File
+     blockinfile:
+        path: ./inventory
+        block: |
+                [docker]
+                {{ x.container.NetworkSettings.IPAddress }} ansible_ssh_user=root ansible_ssh_password=centos
+
+   - name: Refreshing Inventory
+     meta: refresh_inventory
+
+- hosts: docker
+  tasks:
+  - name: Installing HTTPD on Container
+    package:
+        name: "httpd"
+        state: present
+
+  - name: Installing PHP on container
+    package:
+        name: "php"
+        state: present
+
+  - name: Starting HTTPD services
+    shell: "/usr/sbin/httpd"
+
